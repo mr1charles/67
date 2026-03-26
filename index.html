@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoMap Rhythm - Single File</title>
+  <style>
+    :root {
+      --bg: #0d1021;
+      --panel: #151a35;
+      --accent: #6c9cff;
+      --accent2: #30d8b7;
+      --text: #e8ecff;
+      --muted: #9ba6d9;
+      --danger: #ff5a7d;
+      --good: #ffd166;
+      --perfect: #7ef29a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 20% 10%, #1a2350 0, #0d1021 55%);
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: none;
+      padding: 18px;
+      animation: fade .22s ease;
+    }
+    .screen.active { display: flex; }
+    @keyframes fade { from { opacity: 0; transform: translateY(6px);} to {opacity:1; transform:none;} }
+    .card {
+      background: rgba(21, 26, 53, .82);
+      border: 1px solid #2a3368;
+      border-radius: 16px;
+      padding: 18px;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, .22);
+    }
+    button, select, input[type="file"] {
+      border-radius: 10px;
+      border: 1px solid #354281;
+      background: #1d2552;
+      color: var(--text);
+      padding: 10px 12px;
+      font-weight: 600;
+    }
+    button { cursor: pointer; }
+    button:hover { filter: brightness(1.07); }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    #menuScreen { align-items: center; justify-content: center; }
+    #menuPanel {
+      width: min(720px, calc(100vw - 32px));
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    #title {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 800;
+      letter-spacing: .4px;
+      margin: 0;
+    }
+    .muted { color: var(--muted); }
+
+    #libraryList {
+      margin-top: 12px;
+      display: grid;
+      gap: 10px;
+      max-height: 58vh;
+      overflow: auto;
+      padding-right: 3px;
+    }
+    .song-item {
+      border: 1px solid #304086;
+      border-radius: 12px;
+      padding: 10px;
+      background: #161e46;
+      display: grid;
+      gap: 8px;
+    }
+    .song-title { font-weight: 700; }
+    .small { font-size: 12px; color: var(--muted); }
+
+    #gameScreen { flex-direction: column; gap: 8px; }
+    #hud {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    #judgeText {
+      min-width: 90px;
+      text-align: center;
+      font-weight: 800;
+      font-size: 20px;
+    }
+    #progressOuter {
+      flex: 1;
+      min-width: 220px;
+      height: 10px;
+      border-radius: 999px;
+      background: #1b2250;
+      overflow: hidden;
+      border: 1px solid #304086;
+    }
+    #progressInner {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+    }
+    #gameCanvas {
+      width: 100%;
+      height: calc(100vh - 180px);
+      border-radius: 14px;
+      border: 1px solid #304086;
+      background: linear-gradient(180deg, #0a0e25, #0b1636);
+      touch-action: none;
+    }
+    #touchRow {
+      display: none;
+      gap: 8px;
+      width: 100%;
+    }
+    .touch-btn {
+      flex: 1;
+      text-align: center;
+      user-select: none;
+      padding: 14px 0;
+      background: #1c2c6a;
+      border-radius: 10px;
+      border: 1px solid #3553ba;
+      font-weight: 700;
+    }
+    @media (max-width: 860px), (pointer: coarse) {
+      #touchRow { display: flex; }
+    }
+  </style>
+</head>
+<body>
+  <section id="menuScreen" class="screen active">
+    <div id="menuPanel" class="card">
+      <div>
+        <h1 id="title">AutoMap Rhythm</h1>
+        <p class="muted">Upload an MP3, auto-generate a beat map, and play instantly.</p>
+      </div>
+      <div class="card">
+        <label>Upload MP3</label>
+        <input id="fileInput" type="file" accept="audio/mpeg,.mp3" />
+        <div style="height:8px"></div>
+        <div class="btn-row">
+          <label>Difficulty
+            <select id="difficultySelect">
+              <option value="easy">Easy</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Hard</option>
+            </select>
+          </label>
+          <button id="generateBtn">Generate + Play</button>
+          <button id="openLibraryBtn">Library</button>
+        </div>
+        <p id="uploadMeta" class="small">No file selected.</p>
+      </div>
+      <p class="small">Desktop keys: A S D F • Mobile: tap lane pads.</p>
+    </div>
+  </section>
+
+  <section id="libraryScreen" class="screen">
+    <div class="card" style="width:min(920px,100%); margin:auto;">
+      <div class="btn-row" style="justify-content:space-between; align-items:center;">
+        <h2 style="margin:0">Map Library</h2>
+        <button data-nav="menu">Back</button>
+      </div>
+      <div id="libraryList"></div>
+    </div>
+  </section>
+
+  <section id="gameScreen" class="screen">
+    <div id="hud" class="card">
+      <div><strong id="songNow">Song</strong><div class="small" id="songMeta"></div></div>
+      <div>Score: <strong id="scoreEl">0</strong> | Combo: <strong id="comboEl">0</strong> | Max: <strong id="maxComboEl">0</strong></div>
+      <div id="judgeText">Ready</div>
+      <div id="progressOuter"><div id="progressInner"></div></div>
+      <div class="btn-row">
+        <button id="pauseBtn">Pause</button>
+        <button id="quitBtn">Quit</button>
+      </div>
+    </div>
+    <canvas id="gameCanvas" width="1200" height="680"></canvas>
+    <div id="touchRow">
+      <div class="touch-btn" data-lane="0">A</div>
+      <div class="touch-btn" data-lane="1">S</div>
+      <div class="touch-btn" data-lane="2">D</div>
+      <div class="touch-btn" data-lane="3">F</div>
+    </div>
+  </section>
+
+  <section id="resultsScreen" class="screen" style="align-items:center; justify-content:center;">
+    <div class="card" style="width:min(720px,100%);">
+      <h2 style="margin-top:0">Results</h2>
+      <div id="resultsBody"></div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button id="replayBtn">Replay</button>
+        <button data-nav="menu">Main Menu</button>
+        <button data-nav="library">Library</button>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    // ======= Lightweight state + helpers =======
+    const KEY_LANES = { KeyA: 0, KeyS: 1, KeyD: 2, KeyF: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
+    const DIFFICULTY = {
+      easy: { peakStride: 3, speed: 300, perfect: 0.065, good: 0.12, densityBoost: 0.85, scoreMul: 1 },
+      normal: { peakStride: 2, speed: 360, perfect: 0.055, good: 0.1, densityBoost: 1.0, scoreMul: 1.2 },
+      hard: { peakStride: 1, speed: 430, perfect: 0.045, good: 0.085, densityBoost: 1.2, scoreMul: 1.5 }
+    };
+
+    const ui = {
+      screens: {
+        menu: document.getElementById('menuScreen'),
+        library: document.getElementById('libraryScreen'),
+        game: document.getElementById('gameScreen'),
+        results: document.getElementById('resultsScreen')
+      },
+      fileInput: document.getElementById('fileInput'),
+      difficultySelect: document.getElementById('difficultySelect'),
+      generateBtn: document.getElementById('generateBtn'),
+      openLibraryBtn: document.getElementById('openLibraryBtn'),
+      uploadMeta: document.getElementById('uploadMeta'),
+      libraryList: document.getElementById('libraryList'),
+      songNow: document.getElementById('songNow'),
+      songMeta: document.getElementById('songMeta'),
+      scoreEl: document.getElementById('scoreEl'),
+      comboEl: document.getElementById('comboEl'),
+      maxComboEl: document.getElementById('maxComboEl'),
+      judgeText: document.getElementById('judgeText'),
+      progressInner: document.getElementById('progressInner'),
+      pauseBtn: document.getElementById('pauseBtn'),
+      quitBtn: document.getElementById('quitBtn'),
+      replayBtn: document.getElementById('replayBtn'),
+      resultsBody: document.getElementById('resultsBody'),
+      canvas: document.getElementById('gameCanvas'),
+      touchButtons: [...document.querySelectorAll('.touch-btn')]
+    };
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const storage = {
+      db: null,
+      async init() {
+        this.db = await new Promise((resolve, reject) => {
+          const req = indexedDB.open('rhythm_maps_db', 1);
+          req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains('songs')) db.createObjectStore('songs', { keyPath: 'id' });
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      },
+      tx(mode) { return this.db.transaction('songs', mode).objectStore('songs'); },
+      async put(song) { return new Promise((res, rej) => { const r = this.tx('readwrite').put(song); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); },
+      async get(id) { return new Promise((res, rej) => { const r = this.tx('readonly').get(id); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+      async getAll() { return new Promise((res, rej) => { const r = this.tx('readonly').getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); }); },
+      async del(id) { return new Promise((res, rej) => { const r = this.tx('readwrite').delete(id); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
+    };
+
+    const game = {
+      currentSong: null,
+      source: null,
+      analyser: null,
+      startAt: 0,
+      pausedAt: 0,
+      isPlaying: false,
+      isPaused: false,
+      lanes: 4,
+      notes: [],
+      noteIndex: 0,
+      active: [],
+      hitLineY: 0,
+      travelTime: 1.7,
+      score: 0,
+      combo: 0,
+      maxCombo: 0,
+      perfect: 0,
+      good: 0,
+      miss: 0,
+      multiplier: 1,
+      lastJudge: 'Ready',
+      raf: 0,
+      accuracy() {
+        const total = this.perfect + this.good + this.miss;
+        if (!total) return 100;
+        return ((this.perfect * 1 + this.good * .6) / total) * 100;
+      }
+    };
+
+    const ctx = ui.canvas.getContext('2d');
+
+    function showScreen(name) {
+      Object.values(ui.screens).forEach(s => s.classList.remove('active'));
+      ui.screens[name].classList.add('active');
+    }
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function gradeFromAcc(acc) {
+      if (acc >= 97) return 'S';
+      if (acc >= 92) return 'A';
+      if (acc >= 84) return 'B';
+      if (acc >= 72) return 'C';
+      return 'D';
+    }
+
+    async function decodeFile(file) {
+      const buf = await file.arrayBuffer();
+      const audioBuffer = await audioCtx.decodeAudioData(buf.slice(0));
+      return { fileBuffer: buf, audioBuffer };
+    }
+
+    // Basic beat/peak detection and map synthesis.
+    async function generateMap(audioBuffer, difficultyKey) {
+      const difficulty = DIFFICULTY[difficultyKey];
+      const channel = audioBuffer.getChannelData(0);
+      const sampleRate = audioBuffer.sampleRate;
+      const frame = 1024;
+      const energies = [];
+      for (let i = 0; i < channel.length; i += frame) {
+        let e = 0;
+        const end = Math.min(i + frame, channel.length);
+        for (let j = i; j < end; j++) e += channel[j] * channel[j];
+        energies.push(Math.sqrt(e / (end - i || 1)));
+      }
+      const avg = energies.reduce((a, b) => a + b, 0) / energies.length;
+      const std = Math.sqrt(energies.reduce((a, b) => a + (b - avg) ** 2, 0) / energies.length);
+      const threshold = avg + std * 0.65;
+
+      const peaks = [];
+      for (let i = 1; i < energies.length - 1; i++) {
+        if (energies[i] > threshold && energies[i] > energies[i - 1] && energies[i] >= energies[i + 1]) peaks.push(i);
+      }
+
+      // Estimate BPM from average interval between energetic peaks.
+      let bpm = 120;
+      if (peaks.length > 8) {
+        const intervals = [];
+        for (let i = 1; i < peaks.length; i++) intervals.push((peaks[i] - peaks[i - 1]) * frame / sampleRate);
+        const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        bpm = Math.max(70, Math.min(190, Math.round(60 / Math.max(0.2, mean))));
+      }
+
+      const notes = [];
+      const minGap = (60 / bpm) * 0.45 / difficulty.densityBoost;
+      let lane = 0;
+      let lastT = -999;
+      for (let i = 0; i < peaks.length; i += difficulty.peakStride) {
+        const t = peaks[i] * frame / sampleRate;
+        if (t < 1.0 || audioBuffer.duration - t < 0.6) continue;
+        if (t - lastT < minGap) continue;
+        lane = (lane + 1 + (Math.random() > 0.8 ? 1 : 0)) % 4;
+        notes.push({ t: Number(t.toFixed(4)), lane, hit: false, judged: false });
+        if (Math.random() > 0.84 && difficultyKey !== 'easy') {
+          const lane2 = (lane + 2) % 4;
+          notes.push({ t: Number((t + 0.01).toFixed(4)), lane: lane2, hit: false, judged: false });
+        }
+        lastT = t;
+      }
+      notes.sort((a, b) => a.t - b.t);
+
+      const difficultyScore = Math.min(10, Math.max(1,
+        Math.round((notes.length / Math.max(1, audioBuffer.duration)) * 2 + (bpm - 80) / 30 + (difficultyKey === 'hard' ? 2 : 0))
+      ));
+
+      return { notes, bpm, difficultyScore };
+    }
+
+    function setupGame(song) {
+      game.currentSong = song;
+      game.notes = song.map.notes.map(n => ({ ...n, hit: false, judged: false }));
+      game.noteIndex = 0;
+      game.active = [];
+      game.score = 0;
+      game.combo = 0;
+      game.maxCombo = 0;
+      game.perfect = 0;
+      game.good = 0;
+      game.miss = 0;
+      game.multiplier = 1;
+      game.lastJudge = 'Ready';
+      game.isPaused = false;
+      const d = DIFFICULTY[song.map.difficulty];
+      game.travelTime = ui.canvas.height * 0.68 / d.speed;
+      game.hitLineY = ui.canvas.height * 0.84;
+
+      ui.songNow.textContent = song.name;
+      ui.songMeta.textContent = `${formatTime(song.duration)} • ${song.map.bpm} BPM • ${song.map.difficulty.toUpperCase()} (${song.map.difficultyScore}/10)`;
+      ui.scoreEl.textContent = '0';
+      ui.comboEl.textContent = '0';
+      ui.maxComboEl.textContent = '0';
+      ui.judgeText.textContent = 'Ready';
+      ui.progressInner.style.width = '0%';
+    }
+
+    function judge(lane) {
+      if (!game.isPlaying || !game.currentSong) return;
+      const t = nowSongTime();
+      const d = DIFFICULTY[game.currentSong.map.difficulty];
+      const candidates = game.notes.filter(n => !n.judged && n.lane === lane && Math.abs(n.t - t) <= d.good);
+      if (!candidates.length) {
+        applyJudge('Miss', null);
+        return;
+      }
+      candidates.sort((a, b) => Math.abs(a.t - t) - Math.abs(b.t - t));
+      const n = candidates[0];
+      const err = Math.abs(n.t - t);
+      n.judged = true;
+      n.hit = true;
+      if (err <= d.perfect) applyJudge('Perfect', n);
+      else applyJudge('Good', n);
+    }
+
+    function applyJudge(type, note) {
+      if (type === 'Perfect') {
+        game.perfect++; game.combo++; game.score += Math.round(300 * game.multiplier); game.multiplier = Math.min(4, 1 + Math.floor(game.combo / 25) * 0.25);
+      } else if (type === 'Good') {
+        game.good++; game.combo++; game.score += Math.round(140 * game.multiplier); game.multiplier = Math.max(1, game.multiplier - 0.05);
+      } else {
+        game.miss++; game.combo = 0; game.multiplier = 1;
+      }
+      game.maxCombo = Math.max(game.maxCombo, game.combo);
+      game.lastJudge = type;
+      ui.scoreEl.textContent = String(game.score);
+      ui.comboEl.textContent = String(game.combo);
+      ui.maxComboEl.textContent = String(game.maxCombo);
+      ui.judgeText.textContent = type;
+      ui.judgeText.style.color = type === 'Perfect' ? 'var(--perfect)' : type === 'Good' ? 'var(--good)' : 'var(--danger)';
+    }
+
+    function nowSongTime() {
+      if (!game.isPlaying) return 0;
+      return Math.max(0, audioCtx.currentTime - game.startAt);
+    }
+
+    function spawnAndJudgeMisses(t) {
+      while (game.noteIndex < game.notes.length && game.notes[game.noteIndex].t - game.travelTime <= t + 0.02) {
+        game.active.push(game.notes[game.noteIndex]);
+        game.noteIndex++;
+      }
+      const d = DIFFICULTY[game.currentSong.map.difficulty];
+      for (const n of game.active) {
+        if (!n.judged && t - n.t > d.good) {
+          n.judged = true;
+          applyJudge('Miss', n);
+        }
+      }
+    }
+
+    function draw(t) {
+      const w = ui.canvas.width;
+      const h = ui.canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      const laneW = w / game.lanes;
+
+      // Visualizer background
+      if (game.analyser) {
+        const bins = new Uint8Array(game.analyser.frequencyBinCount);
+        game.analyser.getByteFrequencyData(bins);
+        const bars = 56;
+        for (let i = 0; i < bars; i++) {
+          const v = bins[(i * 5) % bins.length] / 255;
+          const bh = v * (h * 0.35);
+          ctx.fillStyle = `rgba(108,156,255,${0.08 + v * 0.22})`;
+          ctx.fillRect(i * (w / bars), h - bh, (w / bars) - 2, bh);
+        }
+      }
+
+      for (let i = 0; i < game.lanes; i++) {
+        ctx.fillStyle = i % 2 ? 'rgba(255,255,255,.02)' : 'rgba(255,255,255,.05)';
+        ctx.fillRect(i * laneW, 0, laneW, h);
+        ctx.strokeStyle = 'rgba(100,130,220,.3)';
+        ctx.beginPath(); ctx.moveTo(i * laneW, 0); ctx.lineTo(i * laneW, h); ctx.stroke();
+      }
+      ctx.strokeStyle = '#96afff';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(0, game.hitLineY); ctx.lineTo(w, game.hitLineY); ctx.stroke();
+
+      for (const n of game.active) {
+        if (n.judged && !n.hit) continue;
+        const y = game.hitLineY - (n.t - t) * (ui.canvas.height * 0.68 / game.travelTime);
+        if (y < -26 || y > h + 30) continue;
+        const x = n.lane * laneW + laneW * 0.5;
+        ctx.fillStyle = n.hit ? 'rgba(126,242,154,.5)' : '#6c9cff';
+        ctx.beginPath();
+        ctx.roundRect(x - laneW * 0.3, y - 14, laneW * 0.6, 20, 8);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = '#d5deff';
+      ctx.font = 'bold 18px system-ui';
+      ['A', 'S', 'D', 'F'].forEach((k, i) => ctx.fillText(k, i * laneW + laneW * 0.47, h - 12));
+    }
+
+    function loop() {
+      if (!game.isPlaying) return;
+      const t = nowSongTime();
+      spawnAndJudgeMisses(t);
+      draw(t);
+      ui.progressInner.style.width = `${Math.min(100, (t / game.currentSong.duration) * 100)}%`;
+      if (t >= game.currentSong.duration + 0.05) {
+        endGame();
+        return;
+      }
+      game.raf = requestAnimationFrame(loop);
+    }
+
+    function stopAudio() {
+      if (game.source) {
+        try { game.source.stop(); } catch (_) {}
+        try { game.source.disconnect(); } catch (_) {}
+      }
+      game.source = null;
+      game.analyser = null;
+      game.isPlaying = false;
+      cancelAnimationFrame(game.raf);
+    }
+
+    function startSong(from = 0) {
+      stopAudio();
+      const source = audioCtx.createBufferSource();
+      source.buffer = game.currentSong.audioBuffer;
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      analyser.connect(audioCtx.destination);
+      source.start(0, from);
+      game.source = source;
+      game.analyser = analyser;
+      game.startAt = audioCtx.currentTime - from;
+      game.isPlaying = true;
+      source.onended = () => { if (game.isPlaying && nowSongTime() >= game.currentSong.duration - 0.1) endGame(); };
+      loop();
+    }
+
+    function endGame() {
+      stopAudio();
+      const acc = game.accuracy();
+      const grade = gradeFromAcc(acc);
+      ui.resultsBody.innerHTML = `
+        <p><strong>${game.currentSong.name}</strong> • ${game.currentSong.map.difficulty.toUpperCase()}</p>
+        <p>Score: <strong>${game.score}</strong></p>
+        <p>Accuracy: <strong>${acc.toFixed(2)}%</strong> (${game.perfect} Perfect / ${game.good} Good / ${game.miss} Miss)</p>
+        <p>Max Combo: <strong>${game.maxCombo}</strong></p>
+        <p>Grade: <strong style="font-size:28px; color:#7ef29a;">${grade}</strong></p>
+      `;
+      showScreen('results');
+    }
+
+    async function playSongObject(songObj) {
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      setupGame(songObj);
+      showScreen('game');
+      startSong(0);
+    }
+
+    async function loadLibraryUI() {
+      const all = await storage.getAll();
+      all.sort((a, b) => b.createdAt - a.createdAt);
+      ui.libraryList.innerHTML = '';
+      if (!all.length) {
+        ui.libraryList.innerHTML = '<p class="small">No maps yet. Upload a song from Main Menu.</p>';
+        return;
+      }
+      for (const s of all) {
+        const item = document.createElement('div');
+        item.className = 'song-item';
+        item.innerHTML = `
+          <div class="song-title">${s.name}</div>
+          <div class="small">${formatTime(s.duration)} • ${s.map.bpm} BPM • Diff ${s.map.difficultyScore}/10 • ${s.map.notes.length} notes • ${new Date(s.createdAt).toLocaleString()}</div>
+          <div class="btn-row">
+            <button data-act="play" data-id="${s.id}">Play</button>
+            <button data-act="delete" data-id="${s.id}">Delete</button>
+          </div>
+        `;
+        ui.libraryList.appendChild(item);
+      }
+    }
+
+    async function handleUploadAndGenerate() {
+      const file = ui.fileInput.files[0];
+      if (!file) {
+        ui.uploadMeta.textContent = 'Choose an MP3 first.';
+        return;
+      }
+      if (!file.name.toLowerCase().endsWith('.mp3')) {
+        ui.uploadMeta.textContent = 'Only .mp3 supported in this build.';
+        return;
+      }
+      ui.uploadMeta.textContent = 'Decoding audio...';
+      try {
+        const { fileBuffer, audioBuffer } = await decodeFile(file);
+        const difficulty = ui.difficultySelect.value;
+        ui.uploadMeta.textContent = 'Analyzing beats + generating map...';
+        const map = await generateMap(audioBuffer, difficulty);
+        const song = {
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: file.name.replace(/\.mp3$/i, ''),
+          duration: audioBuffer.duration,
+          createdAt: Date.now(),
+          map: { ...map, difficulty },
+          fileBlob: new Blob([fileBuffer], { type: 'audio/mpeg' })
+        };
+        await storage.put(song);
+        ui.uploadMeta.textContent = `${song.name} loaded. ${map.notes.length} notes generated, ${map.bpm} BPM estimated.`;
+        await playSongObject(song);
+      } catch (e) {
+        console.error(e);
+        ui.uploadMeta.textContent = `Failed: ${e.message || e}`;
+      }
+    }
+
+    async function playFromLibrary(id) {
+      const song = await storage.get(id);
+      if (!song) return;
+      if (!(song.audioBuffer instanceof AudioBuffer)) {
+        const buf = await song.fileBlob.arrayBuffer();
+        song.audioBuffer = await audioCtx.decodeAudioData(buf);
+      }
+      await playSongObject(song);
+    }
+
+    function bindEvents() {
+      ui.fileInput.addEventListener('change', () => {
+        const f = ui.fileInput.files[0];
+        ui.uploadMeta.textContent = f ? `${f.name} selected (${(f.size / 1024 / 1024).toFixed(2)} MB)` : 'No file selected.';
+      });
+      ui.generateBtn.addEventListener('click', handleUploadAndGenerate);
+      ui.openLibraryBtn.addEventListener('click', async () => { await loadLibraryUI(); showScreen('library'); });
+      document.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', async () => {
+        if (b.dataset.nav === 'library') { await loadLibraryUI(); showScreen('library'); }
+        else showScreen('menu');
+      }));
+
+      ui.pauseBtn.addEventListener('click', () => {
+        if (!game.currentSong) return;
+        if (!game.isPaused) {
+          game.pausedAt = nowSongTime();
+          stopAudio();
+          game.isPaused = true;
+          ui.pauseBtn.textContent = 'Resume';
+          ui.judgeText.textContent = 'Paused';
+        } else {
+          ui.pauseBtn.textContent = 'Pause';
+          game.isPaused = false;
+          startSong(game.pausedAt);
+        }
+      });
+
+      ui.quitBtn.addEventListener('click', () => {
+        stopAudio();
+        showScreen('menu');
+      });
+
+      ui.replayBtn.addEventListener('click', async () => {
+        if (game.currentSong) await playSongObject(game.currentSong);
+      });
+
+      ui.libraryList.addEventListener('click', async (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const id = btn.dataset.id;
+        if (btn.dataset.act === 'play') await playFromLibrary(id);
+        if (btn.dataset.act === 'delete') {
+          await storage.del(id);
+          await loadLibraryUI();
+        }
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && ui.screens.game.classList.contains('active')) {
+          e.preventDefault();
+          ui.pauseBtn.click();
+        }
+        const lane = KEY_LANES[e.code];
+        if (lane !== undefined) {
+          e.preventDefault();
+          judge(lane);
+        }
+      });
+
+      for (const b of ui.touchButtons) {
+        const lane = Number(b.dataset.lane);
+        ['pointerdown', 'touchstart'].forEach(ev => b.addEventListener(ev, (e) => {
+          e.preventDefault();
+          judge(lane);
+        }, { passive: false }));
+      }
+
+      window.addEventListener('resize', fitCanvas);
+    }
+
+    function fitCanvas() {
+      const rect = ui.canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      ui.canvas.width = Math.floor(rect.width * ratio);
+      ui.canvas.height = Math.floor(rect.height * ratio);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(ratio, ratio);
+      ui.canvas.width = Math.floor(rect.width);
+      ui.canvas.height = Math.floor(rect.height);
+    }
+
+    async function boot() {
+      await storage.init();
+      bindEvents();
+      fitCanvas();
+    }
+
+    // Polyfill roundRect for older browsers.
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+        this.beginPath();
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        this.closePath();
+        return this;
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>
